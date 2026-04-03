@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OffGrid Wallet</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap');
+
+  :root {
+    --bg: #080c0a;
+    --surface: #0d1410;
+    --panel: #111a14;
+    --border: #1c2e20;
+    --green: #00ff6a;
+    --green-dim: #00c450;
+    --green-muted: #1a3d22;
+    --amber: #ffb800;
+    --red: #ff3b3b;
+    --text: #c8e0cc;
+    --text-dim: #4a6450;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Barlow Condensed', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,106,0.015) 2px,
+      rgba(0,255,106,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* Noise texture */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 99;
+    opacity: 0.4;
+  }
+
+  /* Header */
+  .header {
+    width: 100%;
+    max-width: 420px;
+    padding: 20px 20px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo {
+    font-family: var(--sans);
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--green);
+    text-shadow: 0 0 20px rgba(0,255,106,0.4);
+  }
+
+  .logo span { color: var(--text-dim); }
+
+  .signal-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+  }
+
+  .signal-bar div {
+    width: 4px;
+    background: var(--green-muted);
+    border-radius: 1px;
+    transition: background 0.4s;
+  }
+  .signal-bar div:nth-child(1) { height: 6px; }
+  .signal-bar div:nth-child(2) { height: 10px; }
+  .signal-bar div:nth-child(3) { height: 14px; }
+  .signal-bar div:nth-child(4) { height: 18px; }
+
+  .signal-bar.offline div { background: var(--green-muted); }
+  .signal-bar.low div:nth-child(1) { background: var(--amber); }
+  .signal-bar.medium div:nth-child(1),
+  .signal-bar.medium div:nth-child(2) { background: var(--amber); }
+  .signal-bar.online div { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .status-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    margin-left: 8px;
+  }
+  .status-label.offline { color: var(--text-dim); }
+  .status-label.low { color: var(--amber); }
+  .status-label.online { color: var(--green); }
+
+  /* Main container */
+  .container {
+    width: 100%;
+    max-width: 420px;
+    padding: 16px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Balance card */
+  .balance-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 22px 22px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .balance-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+    opacity: 0.6;
+  }
+
+  .balance-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .balance-amount {
+    font-family: var(--sans);
+    font-weight: 900;
+    font-size: 48px;
+    line-height: 1;
+    color: var(--green);
+    text-shadow: 0 0 30px rgba(0,255,106,0.25);
+    letter-spacing: -0.02em;
+  }
+
+  .balance-amount .ticker {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--green-dim);
+    margin-left: 4px;
+  }
+
+  .balance-fiat {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .balance-pending {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--amber);
+  }
+
+  .pending-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--amber);
+    animation: pulse-amber 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-amber {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,184,0,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(255,184,0,0); }
+  }
+
+  /* Mode selector */
+  .mode-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    padding: 0 2px;
+  }
+
+  .mode-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .mode-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 8px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .mode-btn:hover {
+    border-color: var(--green-dim);
+    background: rgba(0,255,106,0.04);
+  }
+
+  .mode-btn.active {
+    border-color: var(--green);
+    background: rgba(0,255,106,0.07);
+    box-shadow: 0 0 20px rgba(0,255,106,0.1), inset 0 0 20px rgba(0,255,106,0.04);
+  }
+
+  .mode-btn.active::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  .mode-icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .mode-name {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .mode-btn.active .mode-name { color: var(--green); }
+
+  .mode-status {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+
+  .mode-btn.active .mode-status { color: var(--green-dim); }
+
+  /* Panel */
+  .tx-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .panel-title {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .panel-tag {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .tag-green { background: rgba(0,255,106,0.1); color: var(--green); border: 1px solid rgba(0,255,106,0.2); }
+  .tag-amber { background: rgba(255,184,0,0.1); color: var(--amber); border: 1px solid rgba(255,184,0,0.2); }
+  .tag-dim { background: rgba(255,255,255,0.04); color: var(--text-dim); border: 1px solid var(--border); }
+
+  /* Send form */
+  .send-form {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .field-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+
+  .field-input {
+    width: 100%;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field-input:focus {
+    border-color: var(--green-dim);
+    box-shadow: 0 0 0 2px rgba(0,255,106,0.08);
+  }
+
+  .field-input::placeholder { color: var(--text-dim); }
+
+  .amount-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: end;
+  }
+
+  .max-btn {
+    background: var(--green-muted);
+    border: 1px solid rgba(0,255,106,0.2);
+    color: var(--green);
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 10px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .max-btn:hover {
+    background: rgba(0,255,106,0.2);
+  }
+
+  /* QR display */
+  .qr-area {
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .qr-frame {
+    width: 160px;
+    height: 160px;
+    border: 2px solid var(--green);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 0 30px rgba(0,255,106,0.15), inset 0 0 30px rgba(0,255,106,0.05);
+  }
+
+  .qr-corner {
+    position: absolute;
+    width: 14px; height: 14px;
+    border-color: var(--green);
+    border-style: solid;
+  }
+  .qr-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+  .qr-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+  .qr-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+  .qr-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+
+  /* Fake QR code SVG */
+  .qr-svg {
+    width: 130px;
+    height: 130px;
+  }
+
+  .qr-scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent);
+    animation: scan 2.5s ease-in-out infinite;
+    box-shadow: 0 0 10px var(--green);
+  }
+
+  @keyframes scan {
+    0% { top: 4px; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: calc(100% - 4px); opacity: 0; }
+  }
+
+  .qr-address {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: center;
+    word-break: break-all;
+    max-width: 240px;
+    line-height: 1.6;
+  }
+
+  /* Bluetooth panel */
+  .bt-area {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bt-device {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .bt-device:hover { border-color: var(--green-dim); }
+  .bt-device.paired { border-color: rgba(0,255,106,0.3); background: rgba(0,255,106,0.04); }
+
+  .bt-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .bt-icon { font-size: 18px; }
+
+  .bt-name {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  .bt-meta {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 1px;
+  }
+
+  .bt-action {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 5px 10px;
+    border-radius: 2px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: transparent;
+  }
+
+  .bt-action.connect { color: var(--green); border-color: rgba(0,255,106,0.3); }
+  .bt-action.connect:hover { background: rgba(0,255,106,0.1); }
+  .bt-action.paired-btn { color: var(--green); border-color: var(--green); background: rgba(0,255,106,0.08); }
+
+  /* SMS area */
+  .sms-area {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .sms-info {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    background: rgba(255,184,0,0.06);
+    border: 1px solid rgba(255,184,0,0.2);
+    border-radius: 3px;
+  }
+
+  .sms-info-icon { font-size: 18px; flex-shrink: 0; }
+
+  .sms-info-text {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--amber);
+    line-height: 1.6;
+  }
+
+  /* Action button */
+  .action-btn {
+    width: 100%;
+    padding: 14px;
+    background: rgba(0,255,106,0.08);
+    border: 1px solid rgba(0,255,106,0.3);
+    border-radius: 3px;
+    color: var(--green);
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .action-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0,255,106,0.08) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .action-btn:hover {
+    background: rgba(0,255,106,0.14);
+    border-color: var(--green);
+    box-shadow: 0 0 20px rgba(0,255,106,0.15);
+  }
+
+  .action-btn:hover::before { opacity: 1; }
+
+  .action-btn.secondary {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .action-btn.secondary:hover {
+    border-color: var(--text-dim);
+    background: rgba(255,255,255,0.03);
+    box-shadow: none;
+  }
+
+  /* Queue panel */
+  .queue-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .queue-item:last-child { border-bottom: none; }
+
+  .queue-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .queue-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .q-pending { background: var(--amber); animation: pulse-amber 2s infinite; }
+  .q-ready { background: var(--green); animation: pulse-green 2s infinite; }
+  .q-queued { background: var(--text-dim); }
+
+  @keyframes pulse-green {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,255,106,0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(0,255,106,0); }
+  }
+
+  .queue-info {}
+
+  .queue-desc {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .queue-meta {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .queue-amount {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    text-align: right;
+  }
+
+  .queue-amount .q-method {
+    font-size: 9px;
+    color: var(--text-dim);
+    display: block;
+    margin-top: 2px;
+  }
+
+  /* Sync bar */
+  .sync-bar {
+    background: rgba(0,255,106,0.06);
+    border: 1px solid rgba(0,255,106,0.2);
+    border-radius: 4px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .sync-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .sync-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(0,255,106,0.2);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sync-text {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+  }
+
+  .sync-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  /* Tab hidden */
+  .tab-content { display: none; }
+  .tab-content.active { display: flex; flex-direction: column; gap: 0; }
+
+  /* Divider */
+  hr.divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2px 0;
+  }
+
+  /* Connectivity toggle demo */
+  .connectivity-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+
+  .connectivity-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .toggle {
+    width: 40px; height: 22px;
+    background: var(--green-muted);
+    border-radius: 11px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+    border: 1px solid var(--border);
+  }
+
+  .toggle.on {
+    background: rgba(0,255,106,0.25);
+    border-color: rgba(0,255,106,0.4);
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: all 0.3s;
+  }
+
+  .toggle.on::after {
+    transform: translateX(18px);
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(0,255,106,0.5);
+  }
+
+  /* Footer */
+  .footer-bar {
+    width: 100%;
+    max-width: 420px;
+    padding: 0 20px 8px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+
+  .footer-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    transition: all 0.2s;
+  }
+
+  .footer-btn:hover { background: rgba(255,255,255,0.04); }
+  .footer-btn.active { background: rgba(0,255,106,0.06); }
+
+  .footer-btn .ficon { font-size: 18px; }
+  .footer-btn .fname {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+  }
+
+  .footer-btn.active .fname { color: var(--green); }
+
+  /* Animations */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .container > * {
+    animation: fadeIn 0.4s ease both;
+  }
+
+  .container > *:nth-child(1) { animation-delay: 0s; }
+  .container > *:nth-child(2) { animation-delay: 0.05s; }
+  .container > *:nth-child(3) { animation-delay: 0.1s; }
+  .container > *:nth-child(4) { animation-delay: 0.15s; }
+  .container > *:nth-child(5) { animation-delay: 0.2s; }
+  .container > *:nth-child(6) { animation-delay: 0.25s; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">Off<span>Grid</span></div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="signal-bar offline" id="signalBar">
+      <div></div><div></div><div></div><div></div>
+    </div>
+    <span class="status-label offline" id="statusLabel">OFFLINE</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="container">
+
+  <!-- Connectivity toggles -->
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div class="connectivity-row">
+      <span class="connectivity-label">📶 INTERNET</span>
+      <div class="toggle" id="toggleNet" onclick="toggleConn('net')"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div class="connectivity-row">
+        <span class="connectivity-label">🔵 BT</span>
+        <div class="toggle on" id="toggleBt" onclick="toggleConn('bt')"></div>
+      </div>
+      <div class="connectivity-row">
+        <span class="connectivity-label">📱 SMS</span>
+        <div class="toggle on" id="toggleSms" onclick="toggleConn('sms')"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Balance -->
+  <div class="balance-card">
+    <div class="balance-label">Total Balance</div>
+    <div class="balance-amount">0.4821 <span class="ticker">ETH</span></div>
+    <div class="balance-fiat">≈ $1,247.36 USD</div>
+    <div class="balance-pending">
+      <div class="pending-dot"></div>
+      2 transactions pending sync
+    </div>
+  </div>
+
+  <!-- Send mode selector -->
+  <div>
+    <div class="mode-label" style="margin-bottom:8px">Send Via</div>
+    <div class="mode-grid">
+      <div class="mode-btn" id="mode-qr" onclick="setMode('qr')">
+        <div class="mode-icon">◻</div>
+        <div class="mode-name">QR Code</div>
+        <div class="mode-status">AVAILABLE</div>
+      </div>
+      <div class="mode-btn active" id="mode-bt" onclick="setMode('bt')">
+        <div class="mode-icon">⊛</div>
+        <div class="mode-name">Bluetooth</div>
+        <div class="mode-status">PAIRED</div>
+      </div>
+      <div class="mode-btn" id="mode-sms" onclick="setMode('sms')">
+        <div class="mode-icon">◈</div>
+        <div class="mode-name">SMS</div>
+        <div class="mode-status">FALLBACK</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Send panel -->
+  <div class="tx-panel">
+    <div class="panel-header">
+      <span class="panel-title">New Transaction</span>
+      <span class="panel-tag tag-green" id="modeTag">VIA BLUETOOTH</span>
+    </div>
+
+    <!-- QR Tab -->
+    <div class="tab-content" id="tab-qr">
+      <div class="qr-area">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:0.1em">SCAN TO SEND · YOUR ADDRESS</div>
+        <div class="qr-frame">
+          <div class="qr-scan-line"></div>
+          <svg class="qr-svg" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+            <!-- QR pattern simulation -->
+            <rect width="21" height="21" fill="transparent"/>
+            <!-- Position detection patterns -->
+            <rect x="0" y="0" width="7" height="7" fill="none" stroke="#00ff6a" stroke-width="1"/>
+            <rect x="2" y="2" width="3" height="3" fill="#00ff6a"/>
+            <rect x="14" y="0" width="7" height="7" fill="none" stroke="#00ff6a" stroke-width="1"/>
+            <rect x="16" y="2" width="3" height="3" fill="#00ff6a"/>
+            <rect x="0" y="14" width="7" height="7" fill="none" stroke="#00ff6a" stroke-width="1"/>
+            <rect x="2" y="16" width="3" height="3" fill="#00ff6a"/>
+            <!-- Data modules -->
+            <rect x="8" y="0" width="1" height="1" fill="#00ff6a"/>
+            <rect x="10" y="0" width="1" height="1" fill="#00ff6a"/>
+            <rect x="8" y="2" width="1" height="1" fill="#00ff6a"/>
+            <rect x="10" y="2" width="2" height="1" fill="#00ff6a"/>
+            <rect x="8" y="4" width="2" height="1" fill="#00ff6a"/>
+            <rect x="9" y="6" width="1" height="1" fill="#00ff6a"/>
+            <rect x="11" y="6" width="1" height="1" fill="#00ff6a"/>
+            <rect x="0" y="8" width="1" height="1" fill="#00ff6a"/>
+            <rect x="2" y="8" width="2" height="1" fill="#00ff6a"/>
+            <rect x="5" y="8" width="1" height="1" fill="#00ff6a"/>
+            <rect x="7" y="8" width="2" height="1" fill="#00ff6a"/>
+            <rect x="10" y="8" width="3" height="1" fill="#00ff6a"/>
+            <rect x="14" y="8" width="2" height="1" fill="#00ff6a"/>
+            <rect x="17" y="8" width="2" height="1" fill="#00ff6a"/>
+            <rect x="0" y="10" width="3" height="1" fill="#00ff6a"/>
+            <rect x="4" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="6" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="8" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="10" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="12" y="10" width="2" height="1" fill="#00ff6a"/>
+            <rect x="15" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="18" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="20" y="10" width="1" height="1" fill="#00ff6a"/>
+            <rect x="1" y="12" width="2" height="1" fill="#00ff6a"/>
+            <rect x="4" y="12" width="1" height="1" fill="#00ff6a"/>
+            <rect x="6" y="12" width="3" height="1" fill="#00ff6a"/>
+            <rect x="11" y="12" width="1" height="1" fill="#00ff6a"/>
+            <rect x="13" y="12" width="2" height="1" fill="#00ff6a"/>
+            <rect x="16" y="12" width="1" height="1" fill="#00ff6a"/>
+            <rect x="19" y="12" width="2" height="1" fill="#00ff6a"/>
+            <rect x="8" y="14" width="1" height="1" fill="#00ff6a"/>
+            <rect x="10" y="14" width="2" height="1" fill="#00ff6a"/>
+            <rect x="13" y="14" width="1" height="1" fill="#00ff6a"/>
+            <rect x="15" y="14" width="2" height="1" fill="#00ff6a"/>
+            <rect x="18" y="14" width="1" height="1" fill="#00ff6a"/>
+            <rect x="9" y="16" width="1" height="1" fill="#00ff6a"/>
+            <rect x="11" y="16" width="1" height="1" fill="#00ff6a"/>
+            <rect x="13" y="16" width="3" height="1" fill="#00ff6a"/>
+            <rect x="17" y="16" width="2" height="1" fill="#00ff6a"/>
+            <rect x="8" y="18" width="2" height="1" fill="#00ff6a"/>
+            <rect x="12" y="18" width="1" height="1" fill="#00ff6a"/>
+            <rect x="14" y="18" width="1" height="1" fill="#00ff6a"/>
+            <rect x="16" y="18" width="3" height="1" fill="#00ff6a"/>
+            <rect x="9" y="20" width="1" height="1" fill="#00ff6a"/>
+            <rect x="11" y="20" width="2" height="1" fill="#00ff6a"/>
+            <rect x="14" y="20" width="1" height="1" fill="#00ff6a"/>
+            <rect x="17" y="20" width="2" height="1" fill="#00ff6a"/>
+          </svg>
+          <div class="qr-corner tl"></div>
+          <div class="qr-corner tr"></div>
+          <div class="qr-corner bl"></div>
+          <div class="qr-corner br"></div>
+        </div>
+        <div class="qr-address">0x742d35Cc6634C05329...Bd1a</div>
+        <button class="action-btn secondary" style="max-width:200px">⊡ SCAN RECIPIENT QR</button>
+      </div>
+    </div>
+
+    <!-- BT Tab -->
+    <div class="tab-content active" id="tab-bt">
+      <div class="send-form">
+        <div>
+          <div class="field-label">Recipient Device</div>
+          <select class="field-input" style="cursor:pointer">
+            <option>Maria's Phone · OffGrid v1.2</option>
+            <option>Kofi's Wallet · OffGrid v1.1</option>
+            <option>Amara's Device · nearby</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">Amount</div>
+          <div class="amount-row">
+            <input class="field-input" type="number" placeholder="0.0000" step="0.0001">
+            <button class="max-btn">MAX</button>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Memo (optional)</div>
+          <input class="field-input" type="text" placeholder="market goods, rent...">
+        </div>
+        <button class="action-btn" onclick="simulateSend()">⊛ SEND VIA BLUETOOTH</button>
+      </div>
+    </div>
+
+    <!-- SMS Tab -->
+    <div class="tab-content" id="tab-sms">
+      <div class="sms-area">
+        <div class="sms-info">
+          <div class="sms-info-icon">⚠</div>
+          <div class="sms-info-text">
+            SMS mode sends an encoded text message.<br>
+            Higher fee applies. Recipient must have OffGrid installed.
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Phone Number</div>
+          <input class="field-input" type="tel" placeholder="+1 234 567 8900">
+        </div>
+        <div>
+          <div class="field-label">Amount (ETH)</div>
+          <div class="amount-row">
+            <input class="field-input" type="number" placeholder="0.0000" step="0.0001">
+            <button class="max-btn">MAX</button>
+          </div>
+        </div>
+        <button class="action-btn" onclick="simulateSend()">◈ SEND VIA SMS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pending queue -->
+  <div class="queue-panel">
+    <div class="panel-header">
+      <span class="panel-title">Sync Queue</span>
+      <span class="panel-tag tag-amber">2 PENDING</span>
+    </div>
+    <div id="queueList">
+      <div class="queue-item">
+        <div class="queue-left">
+          <div class="queue-dot q-pending"></div>
+          <div class="queue-info">
+            <div class="queue-desc">→ Maria's Phone</div>
+            <div class="queue-meta">Sent via BT · 14m ago</div>
+          </div>
+        </div>
+        <div class="queue-amount">
+          0.0250 ETH
+          <span class="q-method">BLUETOOTH</span>
+        </div>
+      </div>
+      <div class="queue-item">
+        <div class="queue-left">
+          <div class="queue-dot q-pending"></div>
+          <div class="queue-info">
+            <div class="queue-desc">→ +233 24 555 0182</div>
+            <div class="queue-meta">Sent via SMS · 41m ago</div>
+          </div>
+        </div>
+        <div class="queue-amount">
+          0.0080 ETH
+          <span class="q-method">SMS</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync bar -->
+  <div class="sync-bar" id="syncBar" style="display:none">
+    <div class="sync-left">
+      <div class="sync-spinner"></div>
+      <div class="sync-text">Syncing to chain...</div>
+    </div>
+    <div class="sync-count">2 txns</div>
+  </div>
+
+  <!-- Bluetooth devices -->
+  <div class="tx-panel">
+    <div class="panel-header">
+      <span class="panel-title">Nearby Devices</span>
+      <span class="panel-tag tag-green">3 FOUND</span>
+    </div>
+    <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+      <div class="bt-device paired">
+        <div class="bt-left">
+          <div class="bt-icon">📱</div>
+          <div>
+            <div class="bt-name">Maria's Phone</div>
+            <div class="bt-meta">OffGrid v1.2 · 4m range</div>
+          </div>
+        </div>
+        <button class="bt-action paired-btn">✓ PAIRED</button>
+      </div>
+      <div class="bt-device">
+        <div class="bt-left">
+          <div class="bt-icon">📱</div>
+          <div>
+            <div class="bt-name">Kofi's Wallet</div>
+            <div class="bt-meta">OffGrid v1.1 · 12m range</div>
+          </div>
+        </div>
+        <button class="bt-action connect">CONNECT</button>
+      </div>
+      <div class="bt-device">
+        <div class="bt-left">
+          <div class="bt-icon">💻</div>
+          <div>
+            <div class="bt-name">Amara's Device</div>
+            <div class="bt-meta">OffGrid v1.3 · 18m range</div>
+          </div>
+        </div>
+        <button class="bt-action connect">CONNECT</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Footer nav -->
+<div class="footer-bar">
+  <button class="footer-btn active">
+    <span class="ficon">⊠</span>
+    <span class="fname">WALLET</span>
+  </button>
+  <button class="footer-btn">
+    <span class="ficon">◈</span>
+    <span class="fname">SEND</span>
+  </button>
+  <button class="footer-btn">
+    <span class="ficon">⊟</span>
+    <span class="fname">HISTORY</span>
+  </button>
+  <button class="footer-btn">
+    <span class="ficon">⊞</span>
+    <span class="fname">SETTINGS</span>
+  </button>
+</div>
+
+<script>
+  let mode = 'bt';
+  let netOn = false, btOn = true, smsOn = true;
+  let pendingCount = 2;
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('mode-' + m).classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + m).classList.add('active');
+    const labels = { qr: 'VIA QR CODE', bt: 'VIA BLUETOOTH', sms: 'VIA SMS' };
+    const tagClasses = { qr: 'tag-green', bt: 'tag-green', sms: 'tag-amber' };
+    const tag = document.getElementById('modeTag');
+    tag.textContent = labels[m];
+    tag.className = 'panel-tag ' + tagClasses[m];
+  }
+
+  function toggleConn(type) {
+    if (type === 'net') {
+      netOn = !netOn;
+      document.getElementById('toggleNet').classList.toggle('on', netOn);
+      updateSignal();
+      if (netOn && pendingCount > 0) triggerSync();
+    } else if (type === 'bt') {
+      btOn = !btOn;
+      document.getElementById('toggleBt').classList.toggle('on', btOn);
+    } else {
+      smsOn = !smsOn;
+      document.getElementById('toggleSms').classList.toggle('on', smsOn);
+    }
+  }
+
+  function updateSignal() {
+    const bar = document.getElementById('signalBar');
+    const label = document.getElementById('statusLabel');
+    bar.className = 'signal-bar ' + (netOn ? 'online' : 'offline');
+    label.className = 'status-label ' + (netOn ? 'online' : 'offline');
+    label.textContent = netOn ? 'ONLINE' : 'OFFLINE';
+  }
+
+  function triggerSync() {
+    const syncBar = document.getElementById('syncBar');
+    syncBar.style.display = 'flex';
+    setTimeout(() => {
+      syncBar.style.display = 'none';
+      document.getElementById('queueList').innerHTML = `
+        <div class="queue-item">
+          <div class="queue-left">
+            <div class="queue-dot q-ready"></div>
+            <div class="queue-info">
+              <div class="queue-desc">→ Maria's Phone</div>
+              <div class="queue-meta">Confirmed · block #19483201</div>
+            </div>
+          </div>
+          <div class="queue-amount">0.0250 ETH<span class="q-method">✓ CONFIRMED</span></div>
+        </div>
+        <div class="queue-item">
+          <div class="queue-left">
+            <div class="queue-dot q-ready"></div>
+            <div class="queue-info">
+              <div class="queue-desc">→ +233 24 555 0182</div>
+              <div class="queue-meta">Confirmed · block #19483202</div>
+            </div>
+          </div>
+          <div class="queue-amount">0.0080 ETH<span class="q-method">✓ CONFIRMED</span></div>
+        </div>
+      `;
+      document.querySelector('.balance-pending').innerHTML = `
+        <div class="queue-dot q-ready" style="width:6px;height:6px;border-radius:50%;background:var(--green);"></div>
+        All transactions confirmed on-chain
+      `;
+      document.querySelector('.balance-pending').style.color = 'var(--green)';
+      document.querySelector('.panel-tag.tag-amber').className = 'panel-tag tag-green';
+      document.querySelector('.panel-tag.tag-green').textContent = '2 CONFIRMED';
+      pendingCount = 0;
+    }, 3500);
+  }
+
+  function simulateSend() {
+    const items = document.getElementById('queueList');
+    const methodLabel = mode === 'bt' ? 'BLUETOOTH' : mode === 'sms' ? 'SMS' : 'QR';
+    const now = new Date();
+    const newItem = document.createElement('div');
+    newItem.className = 'queue-item';
+    newItem.style.animation = 'fadeIn 0.3s ease';
+    newItem.innerHTML = `
+      <div class="queue-left">
+        <div class="queue-dot q-pending"></div>
+        <div class="queue-info">
+          <div class="queue-desc">→ New Recipient</div>
+          <div class="queue-meta">Sent via ${methodLabel} · just now</div>
+        </div>
+      </div>
+      <div class="queue-amount">0.0100 ETH<span class="q-method">${methodLabel}</span></div>
+    `;
+    items.appendChild(newItem);
+    pendingCount++;
+    const pendingEl = document.querySelector('.balance-pending');
+    pendingEl.innerHTML = `<div class="pending-dot"></div>${pendingCount} transaction${pendingCount > 1 ? 's' : ''} pending sync`;
+    pendingEl.style.color = '';
+  }
+</script>
+</body>
+</html>
